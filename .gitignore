@@ -152,3 +152,4 @@ cython_debug/
 #.idea/
 data/*
 unlabelled_data
+training_data

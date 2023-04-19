@@ -14,7 +14,7 @@ def save_lidar_grid(las_data, mask, las_file_name):
     las_out.write(las_file_name)
 
 
-def extract_and_save_grid_images(input_las_path, img_size, output_dir='unlabelled_data', resolution=0.01, z_min=-5, z_max=45):
+def extract_and_save_grid_images(input_las_path, img_size, output_dir='training_data', resolution=0.01, z_min=-5, z_max=45):
     # Load the LAS file
     las_data = laspy.read(input_las_path)
     x_data, y_data, z_data = np.array(las_data.x), np.array(
@@ -55,17 +55,17 @@ def extract_and_save_grid_images(input_las_path, img_size, output_dir='unlabelle
                     os.makedirs(grid_dirname)
 
                 # Save image
-                image_filename = f'{grid_dirname}.png'
+                image_filename = f'{grid_name}.png'
                 image_filepath = os.path.join(grid_dirname, image_filename)
                 cv2.imwrite(image_filepath, img)
 
                 # Save LAS file
-                lidar_filename = f'{grid_dirname}.las'
+                lidar_filename = f'{grid_name}.las'
                 lidar_filepath = os.path.join(grid_dirname, lidar_filename)
                 save_lidar_grid(las_data, mask, lidar_filepath)
 
                 # Save metadata
-                metadata_filename = f'{grid_dirname}.csv'
+                metadata_filename = f'{grid_name}.csv'
                 metadata_filepath = os.path.join(
                     grid_dirname, metadata_filename)
 
