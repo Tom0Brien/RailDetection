@@ -58,7 +58,7 @@ def extract_and_save_grid_images(input_las_path, img_size, resolution=0.01, z_mi
                     os.makedirs(grid_dirname)
 
                 # Save image
-                image_filename = f'{grid_name}.png'
+                image_filename = f'{grid_name}_image.png'
                 image_filepath = os.path.join(grid_dirname, image_filename)
                 cv2.imwrite(image_filepath, img)
 
