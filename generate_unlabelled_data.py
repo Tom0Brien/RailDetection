@@ -3,6 +3,7 @@ import csv
 import laspy
 import numpy as np
 import cv2
+import glob
 
 
 def save_lidar_grid(las_data, mask, las_file_name):
@@ -14,7 +15,7 @@ def save_lidar_grid(las_data, mask, las_file_name):
     las_out.write(las_file_name)
 
 
-def extract_and_save_grid_images(input_las_path, img_size, output_dir='training_data', resolution=0.01, z_min=-5, z_max=45):
+def extract_and_save_grid_images(input_las_path, img_size, resolution=0.01, z_min=-5, z_max=45):
     # Load the LAS file
     las_data = laspy.read(input_las_path)
     x_data, y_data, z_data = np.array(las_data.x), np.array(
@@ -24,6 +25,8 @@ def extract_and_save_grid_images(input_las_path, img_size, output_dir='training_
     x_grids, y_grids = int((x_max - x_min) / (img_size[0] * resolution)), int(
         (y_max - y_min) / (img_size[1] * resolution))
 
+    # Create output directory folder which is name of the las file without extension
+    output_dir = os.path.splitext(input_las_path)[0]
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -77,8 +80,10 @@ def extract_and_save_grid_images(input_las_path, img_size, output_dir='training_
                                         y_min_grid, x_max_grid, y_max_grid, z_min, z_max])
 
 
-las_file_path = 'data/A_RP-A-1_ - Scanner 1_SIDE_A - 190324_230239_Scanner_1 - originalpoints.las'
 img_size = (1024, 1024)
 resolution = 0.01  # 1 cm per pixel
 
-extract_and_save_grid_images(las_file_path, img_size, resolution=resolution)
+# Extract and save grid images for each LAS file in data directory
+for las_file_path in glob.glob('data/*.las'):
+    extract_and_save_grid_images(
+        las_file_path, img_size, resolution=resolution)
