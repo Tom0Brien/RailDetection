@@ -50,8 +50,8 @@ def extract_and_save_grid_images(input_las_path, img_size, resolution=0.01, z_mi
                 hist_normalized = (hist - z_min) / (z_max - z_min)
                 img = (hist_normalized * 255).astype(np.uint8)
 
-                # Create directory for the grid
-                grid_name = f'grid_{y_idx}_{x_idx}'
+                # Create file name for the grid with las file name and grid index
+                grid_name = f'{os.path.splitext(os.path.basename(input_las_path))[0]}_{x_idx}_{y_idx}'
                 grid_dirname = os.path.join(output_dir, grid_name)
 
                 if not os.path.exists(grid_dirname):
@@ -80,10 +80,13 @@ def extract_and_save_grid_images(input_las_path, img_size, resolution=0.01, z_mi
                                         y_min_grid, x_max_grid, y_max_grid, z_min, z_max])
 
 
-img_size = (1024, 1024)
-resolution = 0.01  # 1 cm per pixel
-
-# Extract and save grid images for each LAS file in data directory
-for las_file_path in glob.glob('data/*.las'):
-    extract_and_save_grid_images(
-        las_file_path, img_size, resolution=resolution)
+def generate_unlabelled_data():
+    # Get all LAS files in data directory
+    las_files = glob.glob('data/*.las')
+    for las_file_path in las_files:
+        img_size = (1024, 1024)
+        resolution = 0.01  # 1 cm per pixel
+        extract_and_save_grid_images(
+            las_file_path, img_size, resolution=resolution)
+    # Return True if the function successfully finished
+    return True

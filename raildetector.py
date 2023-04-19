@@ -5,6 +5,7 @@ import glob
 from tkinter import filedialog, simpledialog
 from PIL import Image, ImageTk, ImageDraw
 import math
+from generate_unlabelled_data import generate_unlabelled_data
 
 
 class RailDetector(tk.Tk):
@@ -12,6 +13,12 @@ class RailDetector(tk.Tk):
         super().__init__()
 
         self.title("Rail Line Detection Tool")
+        big_frame = tk.Frame(self)
+        big_frame.pack(fill="both", expand=True)
+
+        self.tk.call("source", "azure.tcl")
+        self.tk.call("set_theme", "dark")
+
         self.image_path = None
 
         self.line_width = 10
@@ -27,33 +34,23 @@ class RailDetector(tk.Tk):
         self.canvas = tk.Canvas(self, bg="white", width=1024, height=1024)
         self.canvas.pack(side=tk.RIGHT)
 
+        # Bind events
         self.canvas.bind("<Button-1>", self.on_canvas_click)
         self.canvas.bind("<ButtonRelease-1>", self.end_line)
         self.canvas.bind("<B1-Motion>", self.on_canvas_move)
         self.canvas.bind("<Delete>", self.delete_selected_line)
+        self.canvas.bind("<Escape>", self.deselect_selected_line)
 
         self.menu = tk.Menu(self)
         self.config(menu=self.menu)
 
         self.file_menu = tk.Menu(self.menu)
         self.menu.add_cascade(label="File", menu=self.file_menu)
-        self.file_menu.add_command(label="Save", command=self.save_image)
 
         self.line_menu = tk.Menu(self.menu)
-        self.menu.add_cascade(label="Line", menu=self.line_menu)
-        self.line_menu.add_command(
-            label="Set Line Width", command=self.set_line_width)
-
         self.image_paths = self.load_image_list()
         self.image_index = 0
         self.create_side_panel()
-
-        self.show_lines = tk.BooleanVar()
-        self.show_lines.set(True)
-        self.toggle_lines_button = tk.Checkbutton(
-            self.side_panel, text="Show Rail Lines", variable=self.show_lines,
-            command=self.update_image_display)
-        self.toggle_lines_button.pack(side=tk.TOP)
 
         self.update_image_display()
 
@@ -117,6 +114,12 @@ class RailDetector(tk.Tk):
                                height=self.current_image.height)
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
 
+    def update_image_list(self):
+        self.image_list.delete(0, tk.END)
+        for index, image_path in enumerate(self.image_paths):
+            self.image_list.insert(
+                tk.END, f"{index}: {os.path.basename(image_path)}")
+
     def create_side_panel(self):
         self.side_panel = tk.Frame(self, width=200)
         self.side_panel.pack(side=tk.LEFT, fill=tk.Y)
@@ -124,23 +127,32 @@ class RailDetector(tk.Tk):
         self.image_list = tk.Listbox(self.side_panel)
         self.image_list.pack(fill=tk.BOTH, expand=True)
 
-        for index, image_path in enumerate(self.image_paths):
-            self.image_list.insert(
-                tk.END, f"{index}: {os.path.basename(image_path)}")
+        self.update_image_list()
 
         self.image_list.bind("<<ListboxSelect>>", self.on_image_select)
 
         self.prev_button = tk.Button(
             self.side_panel, text="Previous", command=self.prev_image)
-        self.prev_button.pack(side=tk.TOP)
+        self.prev_button.pack(side=tk.BOTTOM)
 
         self.next_button = tk.Button(
             self.side_panel, text="Next", command=self.next_image)
-        self.next_button.pack(side=tk.TOP)
+        self.next_button.pack(side=tk.BOTTOM)
 
         self.generate_segmentation_button = tk.Button(
-            self.side_panel, text="Generate Segmentation Mask", command=self.generate_segmentation_mask)
-        self.generate_segmentation_button.pack(side=tk.TOP)
+            self.side_panel, text="Generate Segmentation Masks", command=self.generate_segmentation_masks)
+        self.generate_segmentation_button.pack(side=tk.BOTTOM)
+
+        self.generate_segmentation_button = tk.Button(
+            self.side_panel, text="Generate Unlabelled Data", command=self.generate_unlabelled_data)
+        self.generate_segmentation_button.pack(side=tk.BOTTOM)
+
+        self.show_lines = tk.BooleanVar()
+        self.show_lines.set(True)
+        self.toggle_lines_button = tk.Checkbutton(
+            self.side_panel, text="Show Rail Lines", variable=self.show_lines,
+            command=self.update_image_display)
+        self.toggle_lines_button.pack(side=tk.BOTTOM)
 
         # Prevent the side panel from resizing with its contents
         self.side_panel.pack_propagate(0)
@@ -155,6 +167,12 @@ class RailDetector(tk.Tk):
             rail_lines = self.load_rail_lines()
             rail_lines.pop(self.selected_rail_line_index)
             self.save_rail_lines(rail_lines)
+            self.selected_notch = None
+            self.selected_rail_line_index = None
+            self.update_image_display()
+
+    def deselect_selected_line(self, event):
+        if self.selected_rail_line_index is not None:
             self.selected_notch = None
             self.selected_rail_line_index = None
             self.update_image_display()
@@ -305,9 +323,17 @@ class RailDetector(tk.Tk):
     def save_image(self):
         print("Rail lines saved")
 
-    def generate_segmentation_mask(self):
+    def generate_segmentation_masks(self):
         # TODO: Implement segmentation mask generation from rail lines
         print("Generating segmentation mask")
+
+    def generate_unlabelled_data(self):
+        finished = generate_unlabelled_data()
+        if finished:
+            self.image_paths = self.load_image_list()
+            self.image_index = 0
+            self.update_image_list()
+            self.update_image_display()
 
     def load_rail_lines(self):
         rail_lines_path = self.get_rail_lines_path()
