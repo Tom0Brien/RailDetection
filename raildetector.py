@@ -4,6 +4,7 @@ import tkinter as tk
 import glob
 from tkinter import filedialog, simpledialog
 from PIL import Image, ImageTk, ImageDraw
+import math
 
 
 class RailDetector(tk.Tk):
@@ -13,17 +14,23 @@ class RailDetector(tk.Tk):
         self.title("Rail Line Detection Tool")
         self.image_path = None
 
-        self.line_width = 20
-        self.line_color = (0, 0, 255, 128)
+        self.line_width = 10
+        self.line_color = (0, 0, 255, 80)
         self.line_notch_color = (0, 0, 255, 200)
+        self.snap_distance = 20
         self.start_pos = None
         self.current_line = None
+        self.selected_notch = None
+        self.notch_click_radius = 10
+        self.selected_rail_line_index = None
 
         self.canvas = tk.Canvas(self, bg="white", width=1024, height=1024)
         self.canvas.pack(side=tk.RIGHT)
 
-        self.canvas.bind("<ButtonPress-1>", self.start_line)
+        self.canvas.bind("<Button-1>", self.on_canvas_click)
         self.canvas.bind("<ButtonRelease-1>", self.end_line)
+        self.canvas.bind("<B1-Motion>", self.on_canvas_move)
+        self.canvas.bind("<Delete>", self.delete_selected_line)
 
         self.menu = tk.Menu(self)
         self.config(menu=self.menu)
@@ -64,27 +71,34 @@ class RailDetector(tk.Tk):
         for rail_line in rail_lines:
             x1, y1, x2, y2 = rail_line["coordinates"]
 
-            # Draw glowing rail lines with multiple lines with varying widths and decreasing opacity
-            for i, (width, opacity) in enumerate(zip([7, 5, 3, 1], [40, 60, 80, 100])):
-                glow_color = list(self.line_color)
-                glow_color[3] = opacity
-                glow_color = tuple(glow_color)
-                line_image = Image.new(
-                    'RGBA', image.size, (255, 255, 255, 0))
-                draw = ImageDraw.Draw(line_image)
-                draw.line((x1, y1, x2, y2), fill=glow_color,
-                          width=width, joint='curve')
-                image = Image.alpha_composite(image, line_image)
+            # Draw rail lines with multiple lines with varying widths and decreasing opacity
+            line_image = Image.new(
+                'RGBA', image.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(line_image)
+            draw.line((x1, y1, x2, y2), fill=self.line_color,
+                      width=self.line_width, joint='curve')
+            image = Image.alpha_composite(image, line_image)
 
             # Draw rail line notches
-            line_image = Image.new('RGBA', image.size, (255, 255, 255, 0))
             # Draw notches between line segments
-            notch_radius = self.line_width // 4
+            notch_radius = self.line_width * 0.75
             draw = ImageDraw.Draw(line_image)
             draw.ellipse((x1 - notch_radius, y1 - notch_radius, x1 + notch_radius, y1 + notch_radius),
                          fill=self.line_notch_color)
             draw.ellipse((x2 - notch_radius, y2 - notch_radius, x2 + notch_radius, y2 + notch_radius),
                          fill=self.line_notch_color)
+            # Change notch color when selected
+            if self.selected_notch and self.selected_rail_line_index is not None:
+                selected_notch_color = (255, 255, 0, 200)
+                selected_x, selected_y = rail_lines[self.selected_rail_line_index]["coordinates"][
+                    0 if self.selected_notch == "start" else 2
+                ], rail_lines[self.selected_rail_line_index]["coordinates"][
+                    1 if self.selected_notch == "start" else 3
+                ]
+                draw.ellipse((selected_x - notch_radius,
+                              selected_y - notch_radius,
+                              selected_x + notch_radius,
+                              selected_y + notch_radius), fill=selected_notch_color)
             image = Image.alpha_composite(image, line_image)
 
         return image
@@ -135,6 +149,117 @@ class RailDetector(tk.Tk):
         index = int(self.image_list.curselection()[0])
         self.image_index = index
         self.update_image_display()
+
+    def delete_selected_line(self, event):
+        if self.selected_rail_line_index is not None:
+            rail_lines = self.load_rail_lines()
+            rail_lines.pop(self.selected_rail_line_index)
+            self.save_rail_lines(rail_lines)
+            self.selected_notch = None
+            self.selected_rail_line_index = None
+            self.update_image_display()
+
+    def on_canvas_move(self, event):
+        if self.selected_notch is not None and self.selected_rail_line_index is not None:
+            rail_lines = self.load_rail_lines()
+            rail_lines[self.selected_rail_line_index]["coordinates"][self.selected_notch *
+                                                                     2:self.selected_notch * 2 + 2] = [event.x, event.y]
+
+            for index, rail_line in enumerate(rail_lines):
+                if index != self.selected_rail_line_index:
+                    for coord_index in range(0, 4, 2):
+                        x, y = rail_line["coordinates"][coord_index:coord_index + 2]
+                        distance = math.sqrt(
+                            (event.x - x) ** 2 + (event.y - y) ** 2)
+                        if distance <= self.snap_distance:
+                            rail_lines[self.selected_rail_line_index]["coordinates"][self.selected_notch *
+                                                                                     2:self.selected_notch * 2 + 2] = [x, y]
+
+            self.save_rail_lines(rail_lines)
+            self.update_image_display()
+
+    def on_canvas_click(self, event):
+        self.canvas.focus_set()
+        rail_lines = self.load_rail_lines()
+
+        # Check if the user clicked on a notch
+        for index, rail_line in enumerate(rail_lines):
+            for coord_index in range(0, 4, 2):
+                x, y = rail_line["coordinates"][coord_index:coord_index + 2]
+                distance = math.sqrt(
+                    (event.x - x) ** 2 + (event.y - y) ** 2)
+                if distance <= self.notch_click_radius:
+                    self.selected_notch = coord_index // 2
+                    self.selected_rail_line_index = index
+                    return
+
+        if self.selected_notch:
+            self.unselect_notch()
+        else:
+            self.start_line(event)
+
+    def start_line(self, event):
+        self.start_pos = (event.x, event.y)
+        self.current_line = self.canvas.create_line(
+            *self.start_pos, *self.start_pos, fill=self.line_notch_color, width=self.line_width
+        )
+        self.canvas.bind("<B1-Motion>", self.update_line)
+
+    def update_line(self, event):
+        if self.current_line:
+            self.canvas.coords(self.current_line, *
+                               self.start_pos, event.x, event.y)
+
+    def end_line(self, event):
+        if self.start_pos and self.current_line:
+            # Check if the end point is close to another notch and combine them
+            rail_lines = self.load_rail_lines()
+            for line_index, rail_line in enumerate(rail_lines):
+                x1, y1, x2, y2 = rail_line["coordinates"]
+                distance1 = math.sqrt(
+                    (event.x - x1) ** 2 + (event.y - y1) ** 2)
+                distance2 = math.sqrt(
+                    (event.x - x2) ** 2 + (event.y - y2) ** 2)
+                if distance1 <= self.notch_click_radius:
+                    self.start_pos = (x1, y1)
+                    self.combine_notches(line_index, 0)
+                    break
+                elif distance2 <= self.notch_click_radius:
+                    self.start_pos = (x2, y2)
+                    self.combine_notches(line_index, 1)
+                    break
+                x1, y1 = self.start_pos
+                x2, y2 = event.x, event.y
+
+                self.canvas.delete(self.current_line)
+                self.current_line = None
+                self.canvas.unbind("<B1-Motion>")
+
+                rail_line = {
+                    "coordinates": [x1, y1, x2, y2],
+                }
+
+                rail_lines = self.load_rail_lines()
+                rail_lines.append(rail_line)
+                self.save_rail_lines(rail_lines)
+                self.update_image_display()
+
+    def combine_notches(self, line_index, notch_index):
+        rail_lines = self.load_rail_lines()
+        self.selected_rail_line_index = line_index
+        self.selected_notch = notch_index
+        self.end_line(tk.Event())
+
+    def unselect_notch(self):
+        self.selected_notch = None
+        self.selected_rail_line_index = None
+        self.update_image_display()
+
+    def set_line_width(self):
+        width = simpledialog.askinteger(
+            "Line Width", "Enter line width:", initialvalue=self.line_width)
+        if width:
+            self.line_width = width
 
     def prev_image(self):
         if self.image_index > 0:
