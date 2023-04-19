@@ -5,7 +5,7 @@ import glob
 from tkinter import filedialog, simpledialog
 from PIL import Image, ImageTk, ImageDraw
 import math
-from generate_unlabelled_data import generate_unlabelled_data
+from generate_data import generate_unlabelled_data
 
 
 class RailDetector(tk.Tk):
@@ -30,6 +30,8 @@ class RailDetector(tk.Tk):
         self.selected_notch = None
         self.notch_click_radius = 10
         self.selected_rail_line_index = None
+        self.show_segmentation_mask = tk.BooleanVar()
+        self.show_segmentation_mask.set(False)
 
         self.canvas = tk.Canvas(self, bg="white", width=1024, height=1024)
         self.canvas.pack(side=tk.RIGHT)
@@ -84,18 +86,19 @@ class RailDetector(tk.Tk):
                          fill=self.line_notch_color)
             draw.ellipse((x2 - notch_radius, y2 - notch_radius, x2 + notch_radius, y2 + notch_radius),
                          fill=self.line_notch_color)
-            # Change notch color when selected
-            if self.selected_notch and self.selected_rail_line_index is not None:
-                selected_notch_color = (255, 255, 0, 200)
+           # Change notch color when selected
+            if self.selected_notch is not None and self.selected_rail_line_index is not None:
+                selected_notch_color = (255, 0, 0, 100)
                 selected_x, selected_y = rail_lines[self.selected_rail_line_index]["coordinates"][
-                    0 if self.selected_notch == "start" else 2
+                    0 if self.selected_notch == 0 else 2
                 ], rail_lines[self.selected_rail_line_index]["coordinates"][
-                    1 if self.selected_notch == "start" else 3
+                    1 if self.selected_notch == 0 else 3
                 ]
                 draw.ellipse((selected_x - notch_radius,
                               selected_y - notch_radius,
                               selected_x + notch_radius,
                               selected_y + notch_radius), fill=selected_notch_color)
+
             image = Image.alpha_composite(image, line_image)
 
         return image
@@ -104,6 +107,12 @@ class RailDetector(tk.Tk):
         if self.image_paths:
             image_path = self.image_paths[self.image_index]
             unlabelled_image = Image.open(image_path).convert('RGBA')
+
+            if self.show_segmentation_mask.get():
+                segmentation_mask = self.generate_segmentation_mask(
+                    unlabelled_image)
+                unlabelled_image.putalpha(segmentation_mask)
+                self.show_lines.set(False)
 
             if self.show_lines.get():
                 unlabelled_image = self.draw_lines(unlabelled_image)
@@ -121,7 +130,7 @@ class RailDetector(tk.Tk):
                 tk.END, f"{index}: {os.path.basename(image_path)}")
 
     def create_side_panel(self):
-        self.side_panel = tk.Frame(self, width=200)
+        self.side_panel = tk.Frame(self, width=512)
         self.side_panel.pack(side=tk.LEFT, fill=tk.Y)
 
         self.image_list = tk.Listbox(self.side_panel)
@@ -131,13 +140,17 @@ class RailDetector(tk.Tk):
 
         self.image_list.bind("<<ListboxSelect>>", self.on_image_select)
 
+        # Create a new frame for the buttons
+        self.button_frame = tk.Frame(self.side_panel)
+        self.button_frame.pack(side=tk.TOP, pady=5)
+
         self.prev_button = tk.Button(
-            self.side_panel, text="Previous", command=self.prev_image)
-        self.prev_button.pack(side=tk.BOTTOM)
+            self.button_frame, text="Previous", command=self.prev_image)
+        self.prev_button.pack(side=tk.LEFT)
 
         self.next_button = tk.Button(
-            self.side_panel, text="Next", command=self.next_image)
-        self.next_button.pack(side=tk.BOTTOM)
+            self.button_frame, text="Next", command=self.next_image)
+        self.next_button.pack(side=tk.LEFT)
 
         self.generate_segmentation_button = tk.Button(
             self.side_panel, text="Generate Segmentation Masks", command=self.generate_segmentation_masks)
@@ -153,6 +166,11 @@ class RailDetector(tk.Tk):
             self.side_panel, text="Show Rail Lines", variable=self.show_lines,
             command=self.update_image_display)
         self.toggle_lines_button.pack(side=tk.BOTTOM)
+
+        self.toggle_segmentation_mask_button = tk.Checkbutton(
+            self.side_panel, text="Show Segmentation Mask", variable=self.show_segmentation_mask,
+            command=self.update_image_display)
+        self.toggle_segmentation_mask_button.pack(side=tk.BOTTOM)
 
         # Prevent the side panel from resizing with its contents
         self.side_panel.pack_propagate(0)
@@ -194,7 +212,7 @@ class RailDetector(tk.Tk):
                                                                                      2:self.selected_notch * 2 + 2] = [x, y]
 
             self.save_rail_lines(rail_lines)
-            self.update_image_display()
+        self.update_image_display()
 
     def on_canvas_click(self, event):
         self.canvas.focus_set()
@@ -204,14 +222,14 @@ class RailDetector(tk.Tk):
         for index, rail_line in enumerate(rail_lines):
             for coord_index in range(0, 4, 2):
                 x, y = rail_line["coordinates"][coord_index:coord_index + 2]
-                distance = math.sqrt(
-                    (event.x - x) ** 2 + (event.y - y) ** 2)
-                if distance <= self.notch_click_radius:
+                distance = math.sqrt((event.x - x) ** 2 + (event.y - y) ** 2)
+                # If the user clicked on a notch, select it unless the user is holding shift
+                if distance <= self.notch_click_radius and not (event.state & 0x0001):
                     self.selected_notch = coord_index // 2
                     self.selected_rail_line_index = index
                     return
 
-        if self.selected_notch:
+        if self.selected_notch is not None:
             self.unselect_notch()
         else:
             self.start_line(event)
@@ -323,9 +341,28 @@ class RailDetector(tk.Tk):
     def save_image(self):
         print("Rail lines saved")
 
+    def generate_segmentation_mask(self, image):
+        rail_lines = self.load_rail_lines()
+        mask_image = Image.new('1', image.size, 0)
+        draw = ImageDraw.Draw(mask_image)
+
+        for rail_line in rail_lines:
+            x1, y1, x2, y2 = rail_line["coordinates"]
+            draw.line((x1, y1, x2, y2), fill=1,
+                      width=self.line_width, joint='curve')
+
+        return mask_image
+
     def generate_segmentation_masks(self):
-        # TODO: Implement segmentation mask generation from rail lines
-        print("Generating segmentation mask")
+        for image_path in self.image_paths:
+            self.image_index = self.image_paths.index(image_path)
+            unlabelled_image = Image.open(image_path).convert('RGBA')
+            segmentation_mask = self.generate_segmentation_mask(
+                unlabelled_image)
+            segmentation_mask_path = image_path.replace(
+                ".png", "_segmentation.png")
+            segmentation_mask.save(segmentation_mask_path)
+        print("Segmentation masks generated")
 
     def generate_unlabelled_data(self):
         finished = generate_unlabelled_data()
